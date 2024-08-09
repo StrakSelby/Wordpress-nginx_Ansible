@@ -1,0 +1,158 @@
+- name: Download WordPress
+  get_url: 
+    url: "http://wordpress.org/wordpress-{{ wp_version }}.tar.gz"
+    dest: "/srv/wordpress-{{ wp_version }}.tar.gz"
+  #register: download_result
+
+# - name: Debug download result
+#   debug:
+#     var: download_result
+
+- name: Check if WordPress archive exists
+  stat:
+    path: "/srv/wordpress-{{ wp_version }}.tar.gz"
+  register: wp_archive
+
+- name: Verify checksum
+  command: sha256sum /srv/wordpress-{{ wp_version }}.tar.gz
+  register: sha256_result
+  changed_when: false    #the task should not be marked as changed, because the verify checksum is read-only operation
+  when: wp_archive.stat.exists
+
+# - name: Debug wp_archive
+#   debug:
+#     var: wp_archive
+
+# - name: Debug sha256_result
+#   debug:
+#     var: sha256_result
+
+- name: Fail if checksum does not match
+  fail:
+    msg: "Checksum does not match! Expected {{ wp_sha256sum }} but got {{ sha256_result.stdout.split()[0] }}"
+  when: wp_archive.stat.exists and 
+        sha256_result is defined and 
+        sha256_result.rc == 0 and 
+        sha256_result.stdout.split()[0] != wp_sha256sum
+
+- name: Check if WordPress directory exists
+  stat: #use to get information of the file
+    path: /srv/wordpress
+  register: wp_dir_exists
+
+- name: Create WordPress directory if it doesn't exist
+  file:
+    path: /srv/wordpress
+    state: directory
+  when: not wp_dir_exists.stat.exists
+
+- name: Check if WordPress archive exists
+  stat:
+    path: "/srv/wordpress-{{ wp_version }}.tar.gz"
+  register: wp_archive
+
+- name: Extract WordPress archive
+  command: >
+    tar -xzvf /srv/wordpress-{{ wp_version }}.tar.gz -C /srv/wordpress --strip-components=1
+  when: not wp_archive.stat.exists 
+  #register: extract_result
+
+
+# - name: Debug extract result
+#   debug:
+#     var: extract_result
+
+# - name: Check if WordPress files exist after extraction
+#   stat:
+#     path: "/srv/wordpress/index.php"
+  #register: wp_file_check
+
+# - name: Fail if WordPress files do not exist
+#   fail:
+#     msg: "WordPress files were not extracted correctly."
+#   #when: not wp_file_check.stat.exists
+    
+# - name: Add group "wordpress"
+#   group:
+#     name: wordpress
+
+# - name: Add user "wordpress"
+#   user:
+#     name: wordpress
+#     group: wordpress
+#     home: /srv/wordpress/
+
+
+# - name: Fetch random salts for WordPress config
+#   get_url:
+#     url: https://api.wordpress.org/secret-key/1.1/salt/
+#     dest: /tmp/wp_salts.txt
+#   register: wp_salts
+#   become: false
+#   become_method: sudo
+#   changed_when: true
+#   delegate_to: localhost
+
+
+- name: Create WordPress database
+  mysql_db: 
+    name: "{{ wp_db_name }}"
+    state: present
+    login_user: root
+    login_password: "{{ root_pass }}"
+  become: true
+
+- name: Check if user exist in the database
+  mysql_user:
+    name: "{{ wp_db_user }}"
+    password: "{{ wp_db_password }}"
+    login_user: root               
+    login_password: "{{ root_pass }}"
+    state: present
+    column_case_sensitive: false
+  become: true
+  register: user_exist
+
+- name: Create WordPress database user
+  mysql_user: 
+    name: "{{ wp_db_user }}"
+    password: "{{ wp_db_password }}"
+    priv: "{{ wp_db_name }}.*:ALL"
+    host: "localhost"
+    state: present
+    login_user: root               
+    login_password: "{{ root_pass }}"
+    column_case_sensitive: false
+  become: true
+  when: not user_exist
+
+- name: Copy WordPress config file
+  template:
+    src:   wp-config.php
+    dest: /srv/wordpress/wp-config.php
+
+
+# - name: Change ownership of WordPress installation
+#   file: 
+#     path: /srv/wordpress/ 
+#     owner: wordpress 
+#     group: wordpress 
+#     state: directory 
+#     recurse: true
+#     setype: httpd_sys_content_t
+
+- name: Change the permission of the WordPress directory Recursive
+  file:
+    path: /srv/wordpress/
+    owner: wordpress
+    group: wordpress
+    mode: '0775'
+    recurse: yes
+    state: directory
+    setype: httpd_sys_content_t
+  
+- name: Start php-fpm Service
+  service: 
+    name: php-fpm
+    state: started 
+    enabled: yes

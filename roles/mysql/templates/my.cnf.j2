@@ -1,0 +1,19 @@
+[mysqld]
+datadir=/var/lib/mysql
+socket=/var/lib/mysql/mysql.sock
+bind-address = 127.0.0.1
+# Comment out the next line after you reset the root password
+#skip-grant-tables
+user=mysql
+symbolic-links=0
+port=3306  # Use the default MySQL port if not set
+# You can add other configurations here, such as character set, etc.
+
+{# [client]
+user=root
+password=Welcome.01
+host=localhost #}
+
+[mysqld_safe]
+log-error=/var/log/mysqld.log
+pid-file=/var/run/mysqld/mysqld.pid
